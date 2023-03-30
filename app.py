@@ -1,75 +1,57 @@
-import os
+from flask import Flask, render_template, request
+import tensorflow as tf
 import numpy as np
+import os
 import cv2
-from sklearn.neighbors import NearestNeighbors
-from flask import Flask, request, render_template
-from tensorflow.keras.applications.vgg16 import VGG16
-from sklearn.decomposition import PCA
-import pytesseract
-from PIL import Image
 
-# Define the directory where images are stored
-IMAGE_DIR = r'C:\Users\LENOVO\Desktop\image-predictor-engine\static\images'
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# Define the image directory
+IMAGE_DIR = 'static/images'
 
-# Define the dimensions of the input images
-INPUT_SHAPE = (224, 224)
+# Load a pre-trained CNN model (e.g. VGG16)
+model = tf.keras.applications.VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
 
-# Load the pre-trained VGG16 model
-model = VGG16(weights='imagenet', include_top=False)
-
-# Extract features from all images in the directory
-features = []
-captions = []
-for filename in os.listdir(IMAGE_DIR):
-    img_path = os.path.join(IMAGE_DIR, filename)
+def preprocess_image(img_path):
     img = cv2.imread(img_path)
-    img = cv2.resize(img, INPUT_SHAPE)
-    img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img_gray = np.expand_dims(img_gray, axis=-1)
-    img_gray = np.repeat(img_gray, 3, axis=-1)
-    img_gray = np.expand_dims(img_gray, axis=0)
-    features.append(model.predict(img_gray))
-
-    # Extract text from image using OCR
-    img_pil = Image.open(img_path).convert('L')
-    text = pytesseract.image_to_string(img_pil)
-    captions.append(text)
-
-# Convert features to numpy array
-features = np.array(features)
-
-# Reduce the number of dimensions using PCA
-pca = PCA(n_components=2)
-data_reduced = pca.fit_transform(features.reshape(features.shape[0], -1))
-
-# Apply NearestNeighbors on the reduced data
-neigh = NearestNeighbors(n_neighbors=5)
-neigh.fit(data_reduced)
-
-# Define a function to find similar images
+    if img is not None and img.size > 0:
+        img = cv2.resize(img, (224, 224))  # resize the image to (224, 224)
+    img = tf.keras.applications.vgg16.preprocess_input(img)
+    img = np.expand_dims(img, axis=0) # Add a batch dimension
+    return img
 
 
-def find_similar_images(img_path):
-    # Load the input image
-    img = cv2.imread(img_path)
-    img = cv2.resize(img, INPUT_SHAPE)
-    img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img_gray = np.expand_dims(img_gray, axis=-1)
-    img_gray = np.repeat(img_gray, 3, axis=-1)
-    img_gray = np.expand_dims(img_gray, axis=0)
 
-    # Extract features from the input image
-    query_feature = model.predict(img_gray)[0]
-    query_feature_reduced = pca.transform(query_feature.reshape(1, -1))
+def extract_features(img_path):
+    img = preprocess_image(img_path)
+    features = model.predict(img)
+    features = np.reshape(features, (7*7*512,))
+    return features
 
-    # Find the most similar images
-    distances, indices = neigh.kneighbors(query_feature_reduced)
-    similar_images = [os.path.join(
-        '/static/images', os.listdir(IMAGE_DIR)[i]) for i in indices[0]]
-    similar_captions = [captions[i] for i in indices[0]]
 
-    return similar_images, similar_captions
+
+# Define a function to compute the similarity between two feature vectors using cosine similarity
+
+
+def cosine_similarity(vec1, vec2):
+    dot = np.dot(vec1, vec2)
+    norm = np.linalg.norm(vec1) * np.linalg.norm(vec2)
+    sim = dot / norm
+    return sim
+
+# Define a function to find the most similar images to a given image in a directory
+
+
+def find_similar_images(query_img_path, dir_path, top_k=5):
+    query_features = extract_features(query_img_path)
+    sims = []
+    for filename in os.listdir(dir_path):
+        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+            img_path = os.path.join(dir_path, filename)
+            img_features = extract_features(img_path)
+            sim = cosine_similarity(query_features, img_features)
+            sims.append((img_path, sim))
+            print(sims)
+    sims.sort(key=lambda x: x[1], reverse=True)
+    return sims[:top_k]
 
 
 # Define the Flask app
@@ -82,9 +64,8 @@ app = Flask(__name__, template_folder='templates')
 def home():
     return render_template('index.html')
 
-# Define the route for uploading an image and finding similar images
 
-
+# Define the find similar images route
 @app.route('/find_similar_images', methods=['POST'])
 def find_similar_images_route():
     # Get the uploaded image
@@ -92,12 +73,11 @@ def find_similar_images_route():
     uploaded_file.save('tmp.jpg')
 
     # Find the most similar images
-    similar_images, similar_captions = find_similar_images('tmp.jpg')
-    print(similar_images, similar_captions)
+    similar_images = find_similar_images('tmp.jpg', IMAGE_DIR)
+    print(similar_images)
 
     # Render the results template with the similar images and captions
-    return render_template('results.html', similar_images=similar_images, captions=similar_captions)
-
+    return render_template('results.html', similar_images=similar_images)
 
 if __name__ == '__main__':
     app.run(host='localhost', port=5000, debug=True)
