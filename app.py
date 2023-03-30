@@ -9,7 +9,8 @@ import pytesseract
 from PIL import Image
 
 # Define the directory where images are stored
-IMAGE_DIR = r'C:\Users\harsh\OneDrive\Desktop\Projects\image predictor\static\images'
+IMAGE_DIR = r'C:\Users\LENOVO\Desktop\image-predictor-engine\static\images'
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 # Define the dimensions of the input images
 INPUT_SHAPE = (224, 224)
@@ -29,7 +30,7 @@ for filename in os.listdir(IMAGE_DIR):
     img_gray = np.repeat(img_gray, 3, axis=-1)
     img_gray = np.expand_dims(img_gray, axis=0)
     features.append(model.predict(img_gray))
-    
+
     # Extract text from image using OCR
     img_pil = Image.open(img_path).convert('L')
     text = pytesseract.image_to_string(img_pil)
@@ -47,6 +48,8 @@ neigh = NearestNeighbors(n_neighbors=5)
 neigh.fit(data_reduced)
 
 # Define a function to find similar images
+
+
 def find_similar_images(img_path):
     # Load the input image
     img = cv2.imread(img_path)
@@ -62,20 +65,26 @@ def find_similar_images(img_path):
 
     # Find the most similar images
     distances, indices = neigh.kneighbors(query_feature_reduced)
-    similar_images = [os.path.join('/static/images', os.listdir(IMAGE_DIR)[i]) for i in indices[0]]
+    similar_images = [os.path.join(
+        '/static/images', os.listdir(IMAGE_DIR)[i]) for i in indices[0]]
     similar_captions = [captions[i] for i in indices[0]]
-    
+
     return similar_images, similar_captions
 
+
 # Define the Flask app
-app = Flask(__name__,template_folder='templates')
+app = Flask(__name__, template_folder='templates')
 
 # Define the homepage route
+
+
 @app.route('/')
 def home():
     return render_template('index.html')
 
 # Define the route for uploading an image and finding similar images
+
+
 @app.route('/find_similar_images', methods=['POST'])
 def find_similar_images_route():
     # Get the uploaded image
@@ -88,6 +97,7 @@ def find_similar_images_route():
 
     # Render the results template with the similar images and captions
     return render_template('results.html', similar_images=similar_images, captions=similar_captions)
+
 
 if __name__ == '__main__':
     app.run(host='localhost', port=5000, debug=True)
