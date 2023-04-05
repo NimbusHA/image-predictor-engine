@@ -3,6 +3,10 @@ import tensorflow as tf
 import numpy as np
 import os
 import cv2
+import requests
+from io import BytesIO
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
 # Define the image directory
 IMAGE_DIR = 'static/images'
@@ -53,24 +57,29 @@ def find_similar_images(query_img_path, dir_path, top_k=5):
     sims.sort(key=lambda x: x[1], reverse=True)
     return sims[:top_k]
 
+# Authenticate the Google Drive API
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+SERVICE_ACCOUNT_FILE = 'path/to/service_account.json'
+creds = None
+creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+service = build('drive', 'v3', credentials=creds)
 
 # Define the Flask app
 app = Flask(__name__, template_folder='templates')
 
 # Define the homepage route
-
-
 @app.route('/')
 def home():
     return render_template('index.html')
 
-
 # Define the find similar images route
 @app.route('/find_similar_images', methods=['POST'])
 def find_similar_images_route():
-    # Get the uploaded image
-    uploaded_file = request.files['image']
-    uploaded_file.save('tmp.jpg')
+    # Get the uploaded image from Google Drive link
+    link = request.form['link']
+    file_id = link.split('/')[-2]
+    file = service.files().get(fileId=file_id).execute
 
     # Find the most similar images
     similar_images = find_similar_images('tmp.jpg', IMAGE_DIR)
